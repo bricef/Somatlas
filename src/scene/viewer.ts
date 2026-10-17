@@ -153,6 +153,13 @@ export class Viewer {
   apply(state: ViewState): void {
     this.mode = state.mode;
     const hullOn = state.layers.has('hull');
+    this.mu.value = effectiveCoefficients(state.kv, hullOn);
+
+    // Count, per pack, what each pass would actually draw, so passes with
+    // nothing to show are skipped instead of running every vertex only to
+    // discard every fragment (hidden layers, or the ghost pass when nothing
+    // is ghosted).
+    const work = new Map<string, { shown: number; ghosted: number; xray: number }>();
     this.registry.structures.forEach((s, i) => {
       let vis = 0;
       if (state.layers.has(s.layer)) {
@@ -165,9 +172,21 @@ export class Viewer {
       this.stateData[o + 1] = state.selected === s.id ? 255 : 0;
       this.stateData[o + 2] = this.tissueCodes[i];
       this.stateData[o + 3] = s.xrayOnly ? 255 : 0;
+
+      let w = work.get(s.pack);
+      if (!w) work.set(s.pack, (w = { shown: 0, ghosted: 0, xray: 0 }));
+      if (!s.xrayOnly && vis === 1) w.shown++;
+      if (!s.xrayOnly && vis === 2) w.ghosted++;
+      if (vis !== 0 && this.mu.value[this.tissueCodes[i]] !== 0) w.xray++;
     });
+    for (const [id, p] of this.packs) {
+      const w = work.get(id);
+      p.opaque.visible = (w?.shown ?? 0) > 0;
+      p.ghost.visible = (w?.ghosted ?? 0) > 0;
+      p.xray.visible = (w?.xray ?? 0) > 0;
+    }
+
     this.shared.uState.value.needsUpdate = true;
-    this.mu.value = effectiveCoefficients(state.kv, hullOn);
     this.film.uniforms.uLevel.value = state.level;
     this.film.uniforms.uWindow.value = state.window;
   }
