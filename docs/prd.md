@@ -452,12 +452,15 @@ The layer stack drives the peel slider and the auto-peel when a hotspot is tappe
 | Peel order | Layer | Typical contents | Systems | X-ray tissue class |
 |---|---|---|---|---|
 | 1 | Skin | Skin, hair, nails, subcutaneous fat | Integumentary | Soft tissue, fat |
-| 2 | Superficial muscles | Outer muscle groups | Muscular | Muscle |
-| 3 | Deep muscles | Inner muscle groups | Muscular | Muscle |
-| 4 | Vessels | Heart, arteries, veins, lymph vessels and nodes | Cardiovascular, Lymphatic | Blood, soft tissue |
-| 5 | Nerves | Brain, spinal cord, peripheral nerves | Nervous | Brain, soft tissue |
-| 6 | Organs | Lungs, GI tract, liver, kidneys, glands, reproductive organs | Respiratory, Digestive, Urinary, Endocrine, Reproductive | Lung, soft tissue |
-| 7 | Skeleton | Bones, cartilage, ligaments | Skeletal | Bone |
+| 2 | Fascia | Deep fascia and intermuscular septa | Muscular | Soft tissue |
+| 3 | Superficial muscles | Outer muscle groups and their tendons | Muscular | Muscle |
+| 4 | Deep muscles | Inner muscle groups, tendons and bursae | Muscular | Muscle |
+| 5 | Vessels | Heart, arteries, veins, lymph vessels and nodes | Cardiovascular, Lymphatic | Blood, soft tissue |
+| 6 | Nerves | Brain, spinal cord, peripheral nerves | Nervous | Brain, soft tissue |
+| 7 | Organs | Lungs, GI tract, liver, kidneys, glands, reproductive organs | Respiratory, Digestive, Urinary, Endocrine, Reproductive | Lung, soft tissue |
+| 8 | Skeleton | Bones, cartilage, ligaments, joint capsules, teeth | Skeletal | Bone (cartilage and ligaments: soft tissue) |
+
+Within a layer, each vertex carries a tissue surface (bone, cartilage, ligament, tendon, fascia, bursa, tooth enamel, tooth root, fat) so tissues that share a structure, such as a bone and its articular cartilage, are coloured apart. The legend shows the surfaces in the visible layers.
 
 **Systems (11):** integumentary, skeletal, muscular, nervous, endocrine, cardiovascular, lymphatic/immune, respiratory, digestive, urinary, reproductive. Each has at least one L0 hotspot.
 

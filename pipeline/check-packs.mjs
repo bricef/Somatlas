@@ -4,6 +4,7 @@
 // - structures the registry marks as closed are still closed after
 //   simplification and quantisation (the X-ray depends on this)
 // - the body hull is closed
+// - per-vertex tissue surfaces (_SURFACE) name a surface the registry lists
 //
 // Usage: node pipeline/check-packs.mjs [public_dir]
 
@@ -28,6 +29,8 @@ for (const s of registry.structures) {
 
 let problems = 0;
 const tally = {};
+const surfaces = registry.surfaces ?? ['default'];
+const surfaceTris = Object.fromEntries(surfaces.map((n) => [n, 0]));
 for (const pack of registry.packs) {
   const doc = await io.read(path.join(publicDir, pack.file));
   const nodes = new Map(doc.getRoot().listNodes().map((n) => [n.getName(), n]));
@@ -54,6 +57,18 @@ for (const pack of registry.packs) {
       console.error(`registry xray flag for ${s.id} does not match its mesh`);
       problems++;
     }
+    const surface = prim.getAttribute('_SURFACE')?.getArray();
+    if (surface) {
+      for (let t = 0; t < idx.length; t += 3) {
+        const k = surface[idx[t]];
+        if (k >= surfaces.length) {
+          console.error(`${s.id} has surface ${k}, but the registry lists ${surfaces.length}`);
+          problems++;
+          break;
+        }
+        surfaceTris[surfaces[k]]++;
+      }
+    } else surfaceTris.default += idx.length / 3;
     if (s.id === 'body-hull' && !closed) {
       console.error('body hull is not closed after optimisation');
       problems++;
@@ -69,6 +84,7 @@ console.log('tissue   structures  closed (source)  closed (published)  usable by
 for (const [tissue, t] of Object.entries(tally)) {
   console.log(`${tissue.padEnd(8)} ${String(t.total).padStart(10)}  ${String(t.closedBefore).padStart(15)}  ${String(t.closedAfter).padStart(18)}  ${String(t.nearly).padStart(15)}`);
 }
+console.log(`\ntriangles by surface: ${Object.entries(surfaceTris).map(([n, c]) => `${n} ${c}`).join(', ')}`);
 if (problems) {
   console.error(`${problems} problem(s)`);
   process.exit(1);

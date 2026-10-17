@@ -4,7 +4,9 @@
 // would cost ~800 draw calls, which phones cannot afford, so each pack is
 // merged into a single geometry with a per-vertex `sid` attribute (the
 // structure's index in the registry). Shaders look up per-structure state
-// (visible, ghosted, selected, X-ray tissue) from a texture by `sid`.
+// (visible, ghosted, selected, X-ray tissue) from a texture by `sid`. Packs
+// whose meshes carry tissue surfaces (_SURFACE in glTF) keep them as a
+// per-vertex `surface` attribute; every merged geometry has one (0 = none).
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -61,6 +63,7 @@ export async function loadPack(base: string, pack: Pack, registry: Registry): Pr
   const position = new Float32Array(vertices * 3);
   const normal = new Float32Array(vertices * 3);
   const sid = new Float32Array(vertices);
+  const surface = new Uint8Array(vertices);
   const index = new Uint32Array(indices);
   const normalMatrix = new THREE.Matrix3();
 
@@ -74,6 +77,8 @@ export async function loadPack(base: string, pack: Pack, registry: Registry): Pr
     readVec3(pos, m, position, vOff * 3, false);
     if (nor) readVec3(nor, normalMatrix.getNormalMatrix(m), normal, vOff * 3, true);
     sid.fill(part.sid, vOff, vOff + pos.count);
+    const surf = g.attributes._surface as AnyAttribute | undefined;
+    if (surf) for (let i = 0; i < surf.count; i++) surface[vOff + i] = surf.getX(i);
     const flip = m.determinant() < 0;
     if (g.index) {
       const src = g.index.array;
@@ -95,6 +100,7 @@ export async function loadPack(base: string, pack: Pack, registry: Registry): Pr
   geometry.setAttribute('position', new THREE.BufferAttribute(position, 3));
   geometry.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
   geometry.setAttribute('sid', new THREE.BufferAttribute(sid, 1));
+  geometry.setAttribute('surface', new THREE.BufferAttribute(surface, 1));
   geometry.setIndex(new THREE.BufferAttribute(index, 1));
   geometry.computeBoundingSphere();
   geometry.computeBoundingBox();

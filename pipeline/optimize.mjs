@@ -5,7 +5,7 @@
 
 import { readFile, writeFile, mkdir, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { NodeIO } from '@gltf-transform/core';
+import { Logger, NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { weld, simplify, meshopt, prune } from '@gltf-transform/functions';
 import { MeshoptEncoder, MeshoptDecoder, MeshoptSimplifier } from 'meshoptimizer';
@@ -15,6 +15,7 @@ import { isNearlyClosed } from './meshcheck.mjs';
 // (relative to each structure's size). Tuned for the P0 phone budget.
 export const SIMPLIFY = {
   skin: { ratio: 0.6, error: 0.002 },
+  fascia: { ratio: 0.2, error: 0.006 },
   'muscles-superficial': { ratio: 0.2, error: 0.006 },
   'muscles-deep': { ratio: 0.15, error: 0.006 },
   vessels: { ratio: 0.3, error: 0.005 },
@@ -30,8 +31,20 @@ if (!exportDir) {
   process.exit(1);
 }
 
+// _SURFACE (the per-vertex tissue surface written by export.py) is already an
+// unsigned byte holding small integers; the quantiser rightly leaves it alone
+// but warns once per mesh. Weld, simplify and meshopt carry it through: weld
+// only merges vertices whose attributes all match, and the simplifier keeps
+// attribute seams together.
+class PipelineLogger extends Logger {
+  warn(text) {
+    if (!/Skipping _SURFACE/.test(text)) super.warn(text);
+  }
+}
+
 await Promise.all([MeshoptEncoder.ready, MeshoptDecoder.ready, MeshoptSimplifier.ready]);
 const io = new NodeIO()
+  .setLogger(new PipelineLogger(Logger.Verbosity.INFO))
   .registerExtensions(ALL_EXTENSIONS)
   .registerDependencies({ 'meshopt.encoder': MeshoptEncoder, 'meshopt.decoder': MeshoptDecoder });
 
@@ -68,6 +81,16 @@ for (const pack of registry.packs) {
     const closed = isNearlyClosed(prim.getAttribute('POSITION').getArray(), prim.getIndices().getArray());
     s.xray = closed && s.tissue !== 'none';
   }
+  // Which tissue surfaces the pack draws, so the app can show a matching key.
+  const present = new Set();
+  for (const mesh of doc.getRoot().listMeshes()) {
+    for (const prim of mesh.listPrimitives()) {
+      const surface = prim.getAttribute('_SURFACE')?.getArray();
+      if (surface) for (const k of surface) present.add(k);
+    }
+  }
+  present.delete(0);
+  if (present.size) pack.surfaces = registry.surfaces.filter((_, k) => present.has(k));
   const out = path.join(publicDir, pack.file);
   await io.write(out, doc);
   pack.triangles = countTriangles(doc);

@@ -7,19 +7,27 @@
 //   g  selected (255) or not (0)
 //   b  X-ray tissue code (see xray/attenuation.ts), 0 if not X-ray eligible
 //   a  255 if the structure is X-ray-only (never drawn in anatomy views)
-// uColor (RGBA8): display colour per structure.
+// uColor (RGBA8, one texel per structure):
+//   rgb  the structure's own colour
+//   a    brightness jitter / 2, so neighbouring structures read apart
+// uSurface: colour per tissue surface (the `surface` vertex attribute), or a
+//   negative red channel to use the structure's colour instead.
 
 import * as THREE from 'three';
+import { SURFACE_SLOTS } from './palette';
 
 export const STATE_TEX_WIDTH = 64;
 
 const vertex = /* glsl */ `
   in float sid;
+  in float surface;
   flat out int vSid;
+  flat out int vSurface;
   out vec3 vNormal;
   out vec3 vViewPos;
   void main() {
     vSid = int(sid + 0.5);
+    vSurface = int(surface + 0.5);
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
     vViewPos = mv.xyz;
     vNormal = normalize(normalMatrix * normal);
@@ -44,6 +52,8 @@ const anatomyFragment = /* glsl */ `
   ${lookup}
   uniform int uPass;       // 0 opaque, 1 ghost
   uniform float uGhostAlpha;
+  uniform vec3 uSurface[${SURFACE_SLOTS}];
+  flat in int vSurface;
   void main() {
     vec4 st = stateOf(vSid);
     int vis = byteOf(st.r);
@@ -51,7 +61,9 @@ const anatomyFragment = /* glsl */ `
     if (uPass == 0 && vis != 1) discard;
     if (uPass == 1 && vis != 2) discard;
 
-    vec3 base = texelFetch(uColor, texelOf(vSid), 0).rgb;
+    vec4 own = texelFetch(uColor, texelOf(vSid), 0);
+    vec3 tissue = uSurface[clamp(vSurface, 0, ${SURFACE_SLOTS - 1})];
+    vec3 base = (tissue.r >= 0.0 ? tissue : own.rgb) * (own.a * 2.0);
     vec3 n = normalize(vNormal);
     if (!gl_FrontFacing) n = -n;
     vec3 v = normalize(-vViewPos);
@@ -88,6 +100,7 @@ const xrayFragment = /* glsl */ `
 export interface SharedUniforms {
   uState: { value: THREE.DataTexture };
   uColor: { value: THREE.DataTexture };
+  uSurface: { value: Float32Array };
 }
 
 export function anatomyMaterial(shared: SharedUniforms, pass: 0 | 1): THREE.ShaderMaterial {
