@@ -35,6 +35,7 @@ The `.blend` file is opened with embedded scripts disabled (`use_scripts=False`)
 | `blendprep.py` | Opens the file and prepares objects identically for audit and export (all collections evaluated, no subdivision, capped and lighter curve tubes). |
 | `audit.py` | Per-structure mesh report: triangles, closedness, winding, mirroring. |
 | `export.py` | World-space GLB packs, registry, descriptions; small-hole repair and outward orientation; per-vertex tissue surfaces (`_SURFACE`); generated body hull and lung volumes for the X-ray. |
+| `holefill.py` | Close upstream's cutaway windows with caps that follow the surrounding wall's curvature (flat caps for tube ends). |
 | `hull.py` | Voxelise, close, fill and resurface a set of meshes into one closed volume. |
 | `gltfwrite.py` | Minimal GLB writer (one node per structure). |
 | `optimize.mjs` | meshoptimizer simplification and compression; records which structures are still (nearly) closed and therefore usable by the X-ray. |

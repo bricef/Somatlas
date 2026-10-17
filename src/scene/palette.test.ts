@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Registry, type RegistryData } from '../registry';
-import { jitter, SURFACE_SLOTS, SURFACES, surfaceColourArray } from './palette';
+import { colourFor, jitter, SURFACE_SLOTS, SURFACES, surfaceColourArray } from './palette';
 import raw from '../../public/registry.json?raw';
 
 const published = JSON.parse(raw) as RegistryData;
@@ -51,5 +51,15 @@ describe('Registry.surfacesIn', () => {
     expect(r.surfacesIn(['organs', 'hull'])).toEqual([]);
     const both = r.surfacesIn(['muscles-deep', 'skeleton']);
     expect(both).toEqual(published.surfaces.filter((s) => both.includes(s)));
+  });
+});
+
+describe('structure colours', () => {
+  it('colours mucous linings apart from the organ wall they line', () => {
+    const byId = new Map(published.structures.map((s) => [s.id, s]));
+    const lining = colourFor(byId.get('mucosa-of-stomach')!);
+    const wall = colourFor(byId.get('stomach')!);
+    expect(Math.hypot(...lining.map((c, i) => c - wall[i]))).toBeGreaterThan(40);
+    expect(colourFor(byId.get('mucosa-of-nasal-cavity')!)).toEqual(lining);
   });
 });

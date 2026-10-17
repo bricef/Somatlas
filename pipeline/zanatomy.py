@@ -161,6 +161,21 @@ def refine_tissue(tissue: str, surface_area: dict[str, float]) -> str:
     return tissue
 
 
+# Cutaway windows upstream cut into otherwise closed organs. A scan for
+# circular, planar boundary loops finds one: a 5 cm window in the front wall of
+# the stomach. Somatlas closes it, because cutaways belong to the section plane,
+# where the user chooses them. "Mucosa of stomach" is generated upstream from
+# the stomach as a 1 mm inner lining with the same window, and is closed too.
+CLOSE_HOLES = {"Stomach", "Mucosa of stomach"}
+
+# Linings generated upstream by extruding a wall inwards carry a 1 mm band at
+# each opening, flush with the wall's own rim. Once the wall is closed that band
+# would show through it, so it is removed before the lining is closed too.
+# Closed, a lining encloses the organ's whole lumen, which is not tissue, so
+# linings stay out of the X-ray (the organ itself supplies the attenuation).
+LININGS = {"Mucosa of stomach"}
+
+
 LUNG_PATTERN = re.compile(r"\blobe of (left|right) lung\b", re.I)
 AIRWAY_PATTERN = re.compile(r"\b(trachea|bronch\w*)\b", re.I)
 VESSEL_PATTERN = re.compile(r"\b(arter\w*|vein\w*|venous|aorta|vena|venae|sinus of dura)\b", re.I)
@@ -190,7 +205,7 @@ def classify(name: str, collections: list[str]) -> dict | None:
     elif system == "muscular" and "Superficial muscles" in collections:
         layer = "muscles-superficial"
 
-    if HAIR_PATTERN.search(name):
+    if HAIR_PATTERN.search(name) or name in LININGS:
         tissue = "none"
     elif system == "skeletal" and "3: Joints" not in collections:
         tissue = "bone"
