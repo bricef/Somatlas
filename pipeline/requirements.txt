@@ -1,0 +1,5 @@
+# Python 3.13 (bpy 5.2 wheels target it)
+bpy==5.2.2
+numpy
+scipy
+scikit-image
