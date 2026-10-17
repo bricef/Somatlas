@@ -32,6 +32,8 @@ export interface Pack {
   structures: number;
   triangles: number;
   bytes: number;
+  /** Tissue surfaces present in the pack's meshes (names from `surfaces`). */
+  surfaces?: string[];
 }
 
 export interface Layer {
@@ -44,6 +46,8 @@ export interface RegistryData {
   version: number;
   source: { repo: string; commit: string };
   layers: Layer[];
+  /** Per-vertex tissue surfaces, by id; index 0 is "default" (the structure's own colour). */
+  surfaces: string[];
   systems: { id: string; label: string }[];
   packs: Pack[];
   structures: Structure[];
@@ -57,6 +61,7 @@ export class Registry {
   readonly packsByLayer = new Map<string, Pack[]>();
   readonly layers: Layer[];
   readonly systems: Map<string, string>;
+  readonly surfaces: string[];
 
   constructor(readonly data: RegistryData) {
     this.structures = data.structures;
@@ -70,11 +75,19 @@ export class Registry {
     }
     this.layers = [...data.layers].sort((a, b) => a.order - b.order).filter((l) => this.packsByLayer.has(l.id));
     this.systems = new Map(data.systems.map((s) => [s.id, s.label]));
+    this.surfaces = data.surfaces ?? ['default'];
   }
 
   /** Human label, e.g. "Femur (left)". */
   label(s: Structure): string {
     return s.side ? `${s.name} (${s.side})` : s.name;
+  }
+
+  /** Tissue surfaces drawn in the given layers, in registry order. */
+  surfacesIn(layers: Iterable<string>): string[] {
+    const present = new Set<string>();
+    for (const l of layers) for (const p of this.packsByLayer.get(l) ?? []) for (const s of p.surfaces ?? []) present.add(s);
+    return this.surfaces.filter((s) => present.has(s));
   }
 
   layerBytes(layer: string): number {

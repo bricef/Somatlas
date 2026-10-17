@@ -6,7 +6,7 @@ import { effectiveCoefficients, tissueCode, type Tissue } from '../xray/attenuat
 import { autoExposure, type Exposure } from '../xray/exposure';
 import { anatomyMaterial, filmMaterial, STATE_TEX_WIDTH, xrayMaterial, type SharedUniforms } from './materials';
 import { loadPack, type MergedPack } from './packs';
-import { colourFor } from './palette';
+import { colourFor, jitter, surfaceColourArray } from './palette';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
@@ -85,13 +85,13 @@ export class Viewer {
     this.tissueCodes = new Uint8Array(n);
     registry.structures.forEach((s, i) => {
       const [r, g, b] = colourFor(s);
-      colourData.set([r, g, b, 255], i * 4);
+      colourData.set([r, g, b, Math.round(jitter(s.id) * 127.5)], i * 4);
       this.tissueCodes[i] = s.xray ? tissueCode(s.tissue as Tissue) : 0;
     });
     const stateTex = new THREE.DataTexture(this.stateData, STATE_TEX_WIDTH, h, THREE.RGBAFormat);
     const colourTex = new THREE.DataTexture(colourData, STATE_TEX_WIDTH, h, THREE.RGBAFormat);
     colourTex.needsUpdate = true;
-    this.shared = { uState: { value: stateTex }, uColor: { value: colourTex } };
+    this.shared = { uState: { value: stateTex }, uColor: { value: colourTex }, uSurface: { value: surfaceColourArray(registry.surfaces) } };
 
     this.floatBlend = this.renderer.extensions.has('EXT_float_blend');
     this.xrayTarget = new THREE.WebGLRenderTarget(1, 1, {

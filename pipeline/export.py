@@ -57,7 +57,7 @@ SYSTEM_LABELS = {
     "urinary": "Urinary", "reproductive": "Reproductive", "visceral": "Visceral (unassigned)",
 }
 LAYER_LABELS = {
-    "skin": "Skin", "muscles-superficial": "Superficial muscles", "muscles-deep": "Deep muscles",
+    "skin": "Skin", "fascia": "Fascia", "muscles-superficial": "Superficial muscles", "muscles-deep": "Deep muscles",
     "vessels": "Vessels", "nerves": "Nerves", "organs": "Organs", "skeleton": "Skeleton", "hull": "Body outline",
 }
 
@@ -67,7 +67,26 @@ def to_gltf_axes(a: np.ndarray) -> np.ndarray:
     return np.stack([a[:, 0], a[:, 2], -a[:, 1]], axis=1).astype(np.float32)
 
 
-def extract(obj, depsgraph, scratch_mesh):
+def split_by_surface(positions, normals, tris, face_surface):
+    """Give every vertex a single surface by duplicating the vertices shared by
+    faces of different surfaces. The copies keep the same position and normal,
+    so shading stays continuous and the mesh stays closed by position (the
+    simplifier keeps such seams together)."""
+    lo, hi = int(face_surface.min(initial=0)), int(face_surface.max(initial=0))
+    if lo == hi:
+        return positions, normals, tris, np.full(len(positions), lo, np.uint8)
+    key = tris.reshape(-1).astype(np.int64) * 256 + np.repeat(face_surface.astype(np.int64), 3)
+    unique, inverse = np.unique(key, return_inverse=True)
+    v = unique // 256
+    return positions[v], normals[v], inverse.reshape(-1, 3).astype(np.uint32), (unique % 256).astype(np.uint8)
+
+
+def triangle_areas(positions, tris):
+    a, b, c = positions[tris[:, 0]], positions[tris[:, 1]], positions[tris[:, 2]]
+    return 0.5 * np.linalg.norm(np.cross(b - a, c - a), axis=1)
+
+
+def extract(obj, layer, depsgraph, scratch_mesh):
     ev = obj.evaluated_get(depsgraph)
     me = ev.to_mesh()
     bm = bmesh.new()
@@ -105,10 +124,27 @@ def extract(obj, depsgraph, scratch_mesh):
     scratch_mesh.vertex_normals.foreach_get("vector", no)
     tri = np.empty(nt * 3, np.int64)
     scratch_mesh.loop_triangles.foreach_get("vertices", tri)
+    tri = tri.reshape(-1, 3).astype(np.uint32)
+
+    # Per-face tissue surface from the upstream material in that face's slot.
+    poly = np.empty(nt, np.int64)
+    scratch_mesh.loop_triangles.foreach_get("polygon_index", poly)
+    mat_index = np.empty(len(scratch_mesh.polygons), np.int64)
+    scratch_mesh.polygons.foreach_get("material_index", mat_index)
+    slots = [s.material.name if s.material else None for s in obj.material_slots]
+    slot_surface = np.array([zanatomy.surface_of_material(m, layer) for m in slots] or [0], np.uint8)
+    face_surface = slot_surface[np.clip(mat_index[poly], 0, len(slot_surface) - 1)]
+
+    positions, normals = to_gltf_axes(co.reshape(-1, 3)), to_gltf_axes(no.reshape(-1, 3))
+    areas = triangle_areas(positions, tri)
+    surface_area = {zanatomy.SURFACES[k]: float(areas[face_surface == k].sum()) for k in np.unique(face_surface)}
+    positions, normals, tri, surface = split_by_surface(positions, normals, tri, face_surface)
     return {
-        "positions": to_gltf_axes(co.reshape(-1, 3)),
-        "normals": to_gltf_axes(no.reshape(-1, 3)),
-        "indices": tri.reshape(-1, 3).astype(np.uint32),
+        "positions": positions,
+        "normals": normals,
+        "indices": tri,
+        "surface": surface,
+        "surface_area": surface_area,
         "closed": closed,
     }
 
@@ -157,7 +193,7 @@ def main(blend_path: str, ta2_path: str, out_dir: str) -> None:
     lung_inputs = {"left": [], "right": []}
 
     for obj, info in objects:
-        data = extract(obj, depsgraph, scratch)
+        data = extract(obj, info["layer"], depsgraph, scratch)
         if data is None:
             continue
         sid = zanatomy.structure_id(obj.name)
@@ -175,7 +211,10 @@ def main(blend_path: str, ta2_path: str, out_dir: str) -> None:
                 content[content_key] = summary
 
         pack = info["layer"] + ("-nc" if info["nc_suspect"] else "")
-        packs[pack].append({"name": sid, **data, "extras": {"id": sid}})
+        packs[pack].append({
+            "name": sid, "positions": data["positions"], "normals": data["normals"], "indices": data["indices"],
+            "surface": data["surface"], "extras": {"id": sid},
+        })
 
         entry = {
             "id": sid,
@@ -183,7 +222,7 @@ def main(blend_path: str, ta2_path: str, out_dir: str) -> None:
             "side": zanatomy.side_of(obj.name),
             "system": info["system"],
             "layer": info["layer"],
-            "tissue": info["tissue"],
+            "tissue": zanatomy.refine_tissue(info["tissue"], data["surface_area"]),
             "pack": pack,
             "closed": data["closed"],
             "sourceName": obj.name,
@@ -200,7 +239,7 @@ def main(blend_path: str, ta2_path: str, out_dir: str) -> None:
             entry["licence"] = "nc"
         structures.append(entry)
 
-        if info["layer"] in ("skin", "muscles-superficial", "muscles-deep", "skeleton"):
+        if info["layer"] in ("skin", "fascia", "muscles-superficial", "muscles-deep", "skeleton"):
             hull_inputs.append((data["positions"], data["indices"]))
         if info["tissue"] == "lung":
             # The lobe meshes are open at the hilum; display them, but let the
@@ -235,6 +274,13 @@ def main(blend_path: str, ta2_path: str, out_dir: str) -> None:
         lung_stats[side] = lstats
     hstats = {"body": hstats, "lungs": lung_stats}
 
+    surface_tris = collections.Counter()
+    for prims in packs.values():
+        for p in prims:
+            if "surface" in p:
+                for k, n in zip(*np.unique(p["surface"][p["indices"][:, 0]], return_counts=True)):
+                    surface_tris[zanatomy.SURFACES[k]] += int(n)
+
     pack_meta = []
     for key in sorted(packs):
         layer = key.removesuffix("-nc")
@@ -259,6 +305,7 @@ def main(blend_path: str, ta2_path: str, out_dir: str) -> None:
         "up": "+Y",
         "front": "+Z",
         "layers": [{"id": lid, "label": LAYER_LABELS[lid], "order": i} for i, lid in enumerate(zanatomy.LAYER_ORDER + ["hull"])],
+        "surfaces": zanatomy.SURFACES,
         "systems": [{"id": s, "label": SYSTEM_LABELS[s]} for s in used_systems],
         "packs": pack_meta,
         "structures": structures,
@@ -278,6 +325,7 @@ def main(blend_path: str, ta2_path: str, out_dir: str) -> None:
         "structures": len(structures),
         "with_ta2": sum("ta2" in s for s in structures),
         "with_content": sum("contentKey" in s for s in structures),
+        "surface_triangles": surface_tris,
         "packs": {p["id"]: [p["structures"], p["rawTriangles"]] for p in pack_meta},
         "hull": hstats,
     }, indent=1))

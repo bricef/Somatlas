@@ -12,19 +12,26 @@ import struct
 
 import numpy as np
 
-FLOAT, UINT16, UINT32 = 5126, 5123, 5125
+FLOAT, UINT8, UINT16, UINT32 = 5126, 5121, 5123, 5125
 ARRAY_BUFFER, ELEMENT_ARRAY_BUFFER = 34962, 34963
 
 
 def write_glb(path: str, primitives: list[dict], asset_extras: dict | None = None) -> None:
-    """primitives: [{name, positions (N,3) f32, normals (N,3) f32, indices (M,3) u32, extras}]"""
+    """primitives: [{name, positions (N,3) f32, normals (N,3) f32, indices (M,3) u32, surface? (N,) u8, extras}]
+
+    `surface` is written as the custom attribute _SURFACE (unsigned byte), only
+    when some vertex has a non-default surface.
+    """
     blob = bytearray()
     buffer_views, accessors, meshes, nodes = [], [], [], []
 
-    def add_view(data: bytes, target: int) -> int:
+    def add_view(data: bytes, target: int, stride: int | None = None) -> int:
         while len(blob) % 4:
             blob.append(0)
-        buffer_views.append({"buffer": 0, "byteOffset": len(blob), "byteLength": len(data), "target": target})
+        view = {"buffer": 0, "byteOffset": len(blob), "byteLength": len(data), "target": target}
+        if stride:
+            view["byteStride"] = stride
+        buffer_views.append(view)
         blob.extend(data)
         return len(buffer_views) - 1
 
@@ -50,7 +57,16 @@ def write_glb(path: str, primitives: list[dict], asset_extras: dict | None = Non
         accessors.append({"bufferView": add_view(idx.tobytes(), ELEMENT_ARRAY_BUFFER), "componentType": ctype, "count": len(idx), "type": "SCALAR"})
         a_idx = len(accessors) - 1
 
-        meshes.append({"name": p["name"], "primitives": [{"attributes": {"POSITION": a_pos, "NORMAL": a_nor}, "indices": a_idx, "mode": 4}]})
+        attributes = {"POSITION": a_pos, "NORMAL": a_nor}
+        surface = p.get("surface")
+        if surface is not None and np.any(surface):
+            # Vertex attribute elements must be 4-byte aligned: one byte, padded.
+            padded = np.zeros((len(pos), 4), np.uint8)
+            padded[:, 0] = surface
+            accessors.append({"bufferView": add_view(padded.tobytes(), ARRAY_BUFFER, stride=4), "componentType": UINT8, "count": len(pos), "type": "SCALAR"})
+            attributes["_SURFACE"] = len(accessors) - 1
+
+        meshes.append({"name": p["name"], "primitives": [{"attributes": attributes, "indices": a_idx, "mode": 4}]})
         nodes.append({"name": p["name"], "mesh": len(meshes) - 1, "extras": p.get("extras", {})})
 
     while len(blob) % 4:

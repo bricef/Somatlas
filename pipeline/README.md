@@ -31,10 +31,10 @@ The `.blend` file is opened with embedded scripts disabled (`use_scripts=False`)
 
 | File | Role |
 |---|---|
-| `zanatomy.py` | What we know about the source file: which objects are anatomy, their system, layer and X-ray tissue, ids, suspected non-commercial models. Shared by audit and export. |
+| `zanatomy.py` | What we know about the source file: which objects are anatomy, their system, layer and X-ray tissue, ids, suspected non-commercial models, and which upstream materials name a tissue surface. Shared by audit and export. |
 | `blendprep.py` | Opens the file and prepares objects identically for audit and export (all collections evaluated, no subdivision, capped and lighter curve tubes). |
 | `audit.py` | Per-structure mesh report: triangles, closedness, winding, mirroring. |
-| `export.py` | World-space GLB packs, registry, descriptions; small-hole repair and outward orientation; generated body hull and lung volumes for the X-ray. |
+| `export.py` | World-space GLB packs, registry, descriptions; small-hole repair and outward orientation; per-vertex tissue surfaces (`_SURFACE`); generated body hull and lung volumes for the X-ray. |
 | `hull.py` | Voxelise, close, fill and resurface a set of meshes into one closed volume. |
 | `gltfwrite.py` | Minimal GLB writer (one node per structure). |
 | `optimize.mjs` | meshoptimizer simplification and compression; records which structures are still (nearly) closed and therefore usable by the X-ray. |

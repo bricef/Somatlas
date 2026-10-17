@@ -73,7 +73,9 @@ SUBCOLLECTION_SYSTEM = {
     "Endocrine glands": "endocrine",
 }
 
-# System -> peel layer (PRD section 11). Muscles are split by collection below.
+# System -> peel layer (PRD section 11). Muscular structures are split by
+# collection below: deep fascia (the sleeves around limbs and trunk) gets its
+# own layer, so the muscle layers show muscles rather than the fascia over them.
 SYSTEM_LAYER = {
     "integumentary": "skin",
     "muscular": "muscles-deep",
@@ -89,7 +91,7 @@ SYSTEM_LAYER = {
     "skeletal": "skeleton",
 }
 
-LAYER_ORDER = ["skin", "muscles-superficial", "muscles-deep", "vessels", "nerves", "organs", "skeleton"]
+LAYER_ORDER = ["skin", "fascia", "muscles-superficial", "muscles-deep", "vessels", "nerves", "organs", "skeleton"]
 
 # Tessellation for vessels and nerves, which Z-Anatomy stores as bevelled
 # curves. Upstream uses resolution_u=12, bevel_resolution=4, which turns the
@@ -106,6 +108,58 @@ NC_SUSPECT_PATTERNS = [
     re.compile(r"\b(cochlea|cochlear|semicircular|vestibul|labyrinth|utricle|saccule|spiral organ|scala)\b", re.I),
     re.compile(r"\b(kidney|renal|nephr|calyx|calyces)\b", re.I),
 ]
+
+# Tissue surfaces. Z-Anatomy assigns a material to every face, and in the
+# skeleton and muscle layers those materials name the tissue: a femur carries
+# "Cartilage" faces on its articular surfaces, a biceps "Tendon" faces at its
+# ends. Each exported vertex records its surface (an index into SURFACES) so
+# the app can colour tissues apart within a single structure. "default" means
+# "use the structure's own colour". The app owns the colours; this table owns
+# the ids, which are published in the registry.
+SURFACES = ["default", "bone", "cartilage", "ligament", "tendon", "fascia", "bursa", "enamel", "dentine", "fat"]
+
+# Upstream material name -> surface. Numbered variants (Bone-3, Suture-2) are
+# shades of the same material and match by prefix.
+MATERIAL_SURFACE = [
+    (re.compile(r"^(Bone|Suture)(-\d+)?$"), "bone"),
+    (re.compile(r"^Cartilage$"), "cartilage"),
+    (re.compile(r"^(Ligament|Articular capsule)$"), "ligament"),
+    (re.compile(r"^Tendon$"), "tendon"),
+    (re.compile(r"^Fascia$"), "fascia"),
+    (re.compile(r"^Bursa$"), "bursa"),
+    (re.compile(r"^Teeth$"), "enamel"),
+    (re.compile(r"^(Teeth-roots|Dentine)$"), "dentine"),
+    (re.compile(r"^Fat$"), "fat"),
+]
+
+# Only these layers use the materials to mean tissue. Elsewhere upstream reuses
+# them as colour choices (heart valve leaflets are "Cartilage", the dural folds
+# "Cartilage", the pleura "Fascia"), which would label the wrong tissue.
+SURFACE_LAYERS = {"skeleton", "fascia", "muscles-superficial", "muscles-deep"}
+
+# Structures in bone collections that are (almost) all cartilage, such as the
+# costal and laryngeal cartilages, attenuate as soft tissue, not bone. Carpal
+# and tarsal bones carry up to ~85% articular cartilage by area and stay bone.
+CARTILAGE_ONLY_FRACTION = 0.9
+
+
+def surface_of_material(material: str | None, layer: str) -> int:
+    """Surface index for a face with this upstream material in this layer."""
+    if material is None or layer not in SURFACE_LAYERS:
+        return 0
+    for pattern, surface in MATERIAL_SURFACE:
+        if pattern.match(material):
+            return SURFACES.index(surface)
+    return 0
+
+
+def refine_tissue(tissue: str, surface_area: dict[str, float]) -> str:
+    """Adjust the X-ray tissue once the structure's surface make-up is known."""
+    total = sum(surface_area.values())
+    if tissue == "bone" and total > 0 and surface_area.get("cartilage", 0) / total >= CARTILAGE_ONLY_FRACTION:
+        return "soft"
+    return tissue
+
 
 LUNG_PATTERN = re.compile(r"\blobe of (left|right) lung\b", re.I)
 AIRWAY_PATTERN = re.compile(r"\b(trachea|bronch\w*)\b", re.I)
@@ -131,7 +185,9 @@ def classify(name: str, collections: list[str]) -> dict | None:
         return None
 
     layer = SYSTEM_LAYER[system]
-    if system == "muscular" and "Superficial muscles" in collections:
+    if system == "muscular" and "Fascia" in collections:
+        layer = "fascia"
+    elif system == "muscular" and "Superficial muscles" in collections:
         layer = "muscles-superficial"
 
     if HAIR_PATTERN.search(name):

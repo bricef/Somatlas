@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import type { AppContext } from './app';
 import type { Operations } from './ops';
 import { loadContent } from './registry';
+import { SURFACES } from './scene/palette';
 import { exposureChanged } from './xray/exposure';
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, string> = {}, ...children: (Node | string)[]) {
@@ -55,6 +56,20 @@ export function buildUi(ctx: AppContext, ops: Operations<AppContext>, root: HTML
     return { layer: layer.id, box, status, row };
   });
 
+  // --- Tissue key (derived from the surfaces in the visible layers) ---------
+  const tissueList = el('ul', { class: 'key' });
+  const tissueKey = el('section', {}, el('h2', {}, 'Tissues'), tissueList);
+  let tissueShown = '';
+  function renderTissueKey(layers: Set<string>, mode: string) {
+    const surfaces = mode === 'xray' ? [] : registry.surfacesIn(layers).filter((n) => SURFACES[n]);
+    tissueKey.hidden = surfaces.length === 0;
+    const k = surfaces.join();
+    if (k === tissueShown) return;
+    tissueShown = k;
+    tissueList.replaceChildren(...surfaces.map((n) =>
+      el('li', {}, el('span', { class: 'swatch', style: `background:${SURFACES[n].colour}` }), SURFACES[n].label)));
+  }
+
   // --- X-ray controls -----------------------------------------------------
   const slider = (label: string, min: number, max: number, step: number, field: 'kv' | 'level' | 'window') => {
     const input = el('input', { type: 'range', min: String(min), max: String(max), step: String(step) });
@@ -94,7 +109,7 @@ export function buildUi(ctx: AppContext, ops: Operations<AppContext>, root: HTML
       el('div', { class: 'modes' }, anatomyBtn, xrayBtn),
       search, list,
       el('section', {}, el('h2', {}, 'Layers'), ...layerRows.map((r) => r.row)),
-      xraySection, selection, probe,
+      tissueKey, xraySection, selection, probe,
       el('section', { class: 'tools' }, reset, bench, resolution),
       benchOut, credits));
   toggle.onclick = () => {
@@ -161,6 +176,7 @@ export function buildUi(ctx: AppContext, ops: Operations<AppContext>, root: HTML
       r.box.checked = st.layers.has(r.layer);
       r.status.textContent = st.loading.has(r.layer) ? 'loading…' : '';
     }
+    renderTissueKey(st.layers, st.mode);
     auto.checked = st.autoExposure;
     for (const s of sliders) {
       s.input.value = String(st[s.field]);
