@@ -1,0 +1,7 @@
+node_modules/
+dist/
+__pycache__/
+*.pyc
+.DS_Store
+# Upstream source data is fetched by pipeline/fetch-zanatomy.sh, never committed.
+data/
