@@ -28,6 +28,7 @@ import numpy as np  # noqa: E402
 
 import blendprep  # noqa: E402
 import gltfwrite  # noqa: E402
+import holefill  # noqa: E402
 import hull  # noqa: E402
 import zanatomy  # noqa: E402
 
@@ -99,9 +100,16 @@ def extract(obj, layer, depsgraph, scratch_mesh):
         bm.free()
         return None
     # Repair small holes (a few missing triangles are common upstream); leave
-    # genuinely open sheets such as fasciae alone.
+    # genuinely open sheets such as fasciae alone. Close upstream's cutaway
+    # windows with caps that follow the organ's curvature.
     boundary = [e for e in bm.edges if e.is_boundary]
-    if 0 < len(boundary) <= 64:
+    if boundary and obj.name in zanatomy.CLOSE_HOLES:
+        if obj.name in zanatomy.LININGS:
+            rim = {v for e in boundary for v in e.verts}
+            band = [f for f in bm.faces if any(v in rim for v in f.verts)]
+            bmesh.ops.delete(bm, geom=band, context="FACES")
+        holefill.fill_smooth(bm, holefill.boundary_loops(bm))
+    elif 0 < len(boundary) <= 64:
         bmesh.ops.holes_fill(bm, edges=boundary, sides=0)
         bmesh.ops.triangulate(bm, faces=bm.faces[:])
     defects = sum(1 for e in bm.edges if not e.is_manifold)

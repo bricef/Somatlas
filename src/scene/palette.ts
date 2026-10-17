@@ -19,6 +19,9 @@ const SYSTEM_COLOURS: Record<string, string> = {
 };
 const VEIN = '#3f63b4';
 const HULL = '#9fb6cc';
+// Mucous membrane linings (inside the stomach, the nasal cavity): a deeper
+// pink-red than the organ wall, so the lining reads as the inside.
+const MUCOSA = '#c94f6d';
 
 /**
  * Tissue surface colours, keyed by the surface names the registry publishes.
@@ -56,6 +59,7 @@ export function jitter(id: string): number {
 export function colourFor(s: Structure): [number, number, number] {
   let hex = SYSTEM_COLOURS[s.system] ?? '#bbbbbb';
   if (s.id === 'body-hull') hex = HULL;
+  else if (/\bmucosa\b|\bmucous membrane\b/i.test(s.name)) hex = MUCOSA;
   else if (s.system === 'cardiovascular' && /\bvein|venous|vena|venae|sinus/i.test(s.name)) hex = VEIN;
   return hexToRgb(hex);
 }
